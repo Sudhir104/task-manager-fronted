@@ -11,7 +11,7 @@ const STATUS_COLORS = {
 export default function Dashboard() {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem("user") || "{}");
-  const isAdmin = user.role === "Admin";
+  const isAdmin = user.role === "Admin" || user.role === "admin";
 
   const [tasks, setTasks] = useState([]);
   const [stats, setStats] = useState({});
@@ -48,15 +48,22 @@ export default function Dashboard() {
 
   useEffect(() => { fetchAll(); }, []);
 
+  // ✅ FIX: projectId aur dueDate empty string ki jagah null bhejo
   const createTask = async () => {
     if (!taskForm.title) return alert("Task title required");
     try {
-      await API.post("/tasks", taskForm);
+      await API.post("/tasks", {
+        title: taskForm.title,
+        description: taskForm.description || undefined,
+        status: taskForm.status,
+        projectId: taskForm.projectId || null,
+        dueDate: taskForm.dueDate || null,
+      });
       setTaskForm({ title: "", description: "", status: "Todo", dueDate: "", projectId: "" });
       setShowTaskForm(false);
       fetchAll();
     } catch (err) {
-      alert(err.response?.data?.message || "Error creating task");
+      alert(err.response?.data?.message || err.response?.data?.error || "Error creating task");
     }
   };
 
@@ -75,6 +82,7 @@ export default function Dashboard() {
     } catch (err) { console.error(err); }
   };
 
+  // ✅ FIX: Admin check both cases
   const createProject = async () => {
     if (!projectForm.name) return alert("Project name required");
     try {
@@ -83,7 +91,7 @@ export default function Dashboard() {
       setShowProjectForm(false);
       fetchAll();
     } catch (err) {
-      alert(err.response?.data?.message || "Error creating project");
+      alert(err.response?.data?.message || err.response?.data?.error || "Error creating project");
     }
   };
 
@@ -163,7 +171,11 @@ export default function Dashboard() {
               {activeTab === "tasks" ? "Tasks" : activeTab === "projects" ? "Projects" : "Dashboard"}
             </h1>
             <p style={s.pageSub}>
-              {activeTab === "tasks" ? `${filteredTasks.length} tasks total` : activeTab === "projects" ? `${projects.length} projects` : "Your overview"}
+              {activeTab === "tasks"
+                ? `${filteredTasks.length} tasks total`
+                : activeTab === "projects"
+                ? `${projects.length} projects`
+                : "Your overview"}
             </p>
           </div>
           <div style={{ display: "flex", gap: 12 }}>
@@ -203,10 +215,13 @@ export default function Dashboard() {
             {/* Recent tasks in stats */}
             <div style={s.section}>
               <h2 style={s.sectionTitle}>Recent Tasks</h2>
+              {tasks.length === 0 && (
+                <div style={{ color: "var(--text2)", fontSize: 14 }}>No tasks yet.</div>
+              )}
               {tasks.slice(0, 5).map((task) => (
                 <div key={task._id} style={s.taskRowSimple}>
                   <span style={{ color: "var(--white)", fontWeight: 500 }}>{task.title}</span>
-                  <span style={{ ...s.badge, ...STATUS_COLORS[task.status] }}>{task.status}</span>
+                  <span style={{ ...s.badge, ...(STATUS_COLORS[task.status] || {}) }}>{task.status}</span>
                 </div>
               ))}
             </div>
@@ -290,7 +305,7 @@ export default function Dashboard() {
                       {task.description && <div style={s.taskDesc}>{task.description}</div>}
                       <div style={s.taskMeta}>
                         {task.projectId && (
-                          <span style={s.metaTag}>◈ {task.projectId.name}</span>
+                          <span style={s.metaTag}>◈ {task.projectId.name || "Project"}</span>
                         )}
                         {task.dueDate && (
                           <span style={{ ...s.metaTag, color: isOverdue(task) ? "var(--red)" : "var(--text2)" }}>
@@ -302,7 +317,7 @@ export default function Dashboard() {
                     </div>
                     <div style={s.taskRight}>
                       <select
-                        style={{ ...s.statusSelect, ...STATUS_COLORS[task.status] }}
+                        style={{ ...s.statusSelect, ...(STATUS_COLORS[task.status] || {}) }}
                         value={task.status}
                         onChange={(e) => updateTask(task._id, { status: e.target.value })}
                       >
@@ -346,14 +361,21 @@ export default function Dashboard() {
               </div>
             )}
 
-            {projects.length === 0 ? (
+            {!isAdmin && projects.length === 0 && (
               <div style={s.empty}>
                 <div style={{ fontSize: 48, marginBottom: 12 }}>📁</div>
-                <div style={{ color: "var(--text2)" }}>
-                  {isAdmin ? "No projects yet. Create your first project!" : "No projects assigned to you yet."}
-                </div>
+                <div style={{ color: "var(--text2)" }}>No projects assigned to you yet.</div>
               </div>
-            ) : (
+            )}
+
+            {isAdmin && projects.length === 0 && !showProjectForm && (
+              <div style={s.empty}>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>📁</div>
+                <div style={{ color: "var(--text2)" }}>No projects yet. Create your first project!</div>
+              </div>
+            )}
+
+            {projects.length > 0 && (
               <div style={s.projectGrid}>
                 {projects.map((project) => {
                   const projectTasks = tasks.filter((t) => t.projectId?._id === project._id);
